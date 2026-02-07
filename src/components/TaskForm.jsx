@@ -26,20 +26,52 @@ export default function TaskForm() {
   const [difficulty, setDifficulty] = useState(3);
   const [hours, setHours] = useState(1);
 
-  function onSubmit(e) {
+  // AI state
+  const [aiStatus, setAiStatus] = useState("idle"); // idle | loading | done | error
+  const [aiText, setAiText] = useState("");
+
+  async function onSubmit(e) {
     e.preventDefault();
     if (!title.trim() || !dueDate) return;
 
-    dispatch(
-      taskAdded({
-        title,
-        subject,
-        dueDate,
-        difficulty,
-        hours,
-      })
-    );
+    const task = {
+      id: crypto.randomUUID(),
+      title,
+      subject,
+      dueDate,
+      difficulty,
+      hours,
+      done: false,
+    };
 
+    // 1️⃣ Добавляем задачу
+    dispatch(taskAdded(task));
+
+    // 2️⃣ Сразу вызываем ИИ
+    setAiStatus("loading");
+    setAiText("");
+
+    try {
+      const res = await fetch("/.netlify/functions/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(task),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      setAiText(data.text || "Нет ответа от ИИ");
+      setAiStatus("done");
+    } catch (err) {
+      setAiStatus("error");
+      setAiText(err.message || "Ошибка ИИ");
+    }
+
+    // 3️⃣ Очищаем форму
     setTitle("");
     setSubject(SUBJECTS[0]);
     setDueDate("");
@@ -78,7 +110,7 @@ export default function TaskForm() {
         </select>
       </label>
 
-      {/* Дедлайн (wheel на iPhone) */}
+      {/* Дедлайн */}
       <label style={styles.label}>
         Дедлайн *
         <input
@@ -124,6 +156,24 @@ export default function TaskForm() {
       <button style={ui.button} type="submit">
         Добавить
       </button>
+
+      {/* AI Output */}
+      {aiStatus === "loading" && (
+        <p style={{ marginTop: 12, opacity: 0.8 }}>🤖 Думаю...</p>
+      )}
+
+      {aiStatus === "done" && aiText && (
+        <div style={styles.aiBox}>
+          <div style={styles.aiTitle}>🤖 Подсказка ИИ</div>
+          <div style={styles.aiText}>{aiText}</div>
+        </div>
+      )}
+
+      {aiStatus === "error" && (
+        <p style={{ marginTop: 12, color: "salmon" }}>
+          🤖 Ошибка: {aiText}
+        </p>
+      )}
     </form>
   );
 }
@@ -135,5 +185,21 @@ const styles = {
     gap: 6,
     marginTop: 12,
     color: "var(--muted)",
+  },
+  aiBox: {
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 16,
+    border: "1px solid var(--border)",
+    background: "rgba(255,255,255,0.05)",
+  },
+  aiTitle: {
+    fontWeight: 900,
+    marginBottom: 8,
+  },
+  aiText: {
+    whiteSpace: "pre-wrap",
+    fontSize: 14,
+    lineHeight: 1.5,
   },
 };
